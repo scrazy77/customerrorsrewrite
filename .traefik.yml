@@ -1,0 +1,10 @@
+displayName: Custom Errors Rewrite
+summary: Resend request to custom service when reponse error
+type: middleware
+import: github.com/scrazy77/customerrorsrewrite
+compatibility: TODO
+testData:
+  targetService: "service"
+  matchPattern: "string"
+  replaceRule: "string"
+  responseCode: 503
