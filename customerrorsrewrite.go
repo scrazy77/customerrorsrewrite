@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"net/http/httputil"
 	"regexp"
 	"strconv"
 	"strings"
@@ -97,12 +96,7 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 		}
 	}
 
-	// If an error occurs or the response code doesn't match, serve the recorded response.
-	respDump, err := httputil.DumpResponse(respRecorder.Result(), false)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("RESPONSE:" + string(respDump))
+	// set response header
 	for key, values := range respRecorder.Result().Header {
 		for _, value := range values {
 			rw.Header().Set(key, value)
