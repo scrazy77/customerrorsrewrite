@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,13 +38,14 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 
 	// Process the request through the next handler.
 	respRecorder := httptest.NewRecorder()
+	log.Println("Original URL:" + req.URL.Path)
 	c.next.ServeHTTP(respRecorder, req)
 	log.Println("Response code:" + strconv.Itoa(c.config.ResponseCode))
 	// Check if the actual response code matches the configured responseCode.
 	if respRecorder.Code == c.config.ResponseCode {
 		log.Println("Response code matched!")
 		// If the response code matches, redirect to TargetService.
-		log.Println("Original URL:" + req.URL.Path)
+		log.Println("Original URL2:" + req.URL.Path)
 		if len(c.config.MatchPattern) > 0 {
 			// Rewrite path based on regex rule.
 			log.Println("MatchPattern:" + c.config.MatchPattern)
@@ -96,7 +98,18 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 	}
 
 	// If an error occurs or the response code doesn't match, serve the recorded response.
+	respDump, err := httputil.DumpResponse(respRecorder.Result(), false)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("RESPONSE:" + string(respDump))
+	for key, values := range respRecorder.Result().Header {
+		for _, value := range values {
+			rw.Header().Set(key, value)
+		}
+	}
 	respRecorder.Result().Write(rw)
+
 }
 
 func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
