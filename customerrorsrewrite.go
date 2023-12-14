@@ -96,14 +96,8 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 		}
 	}
 
-	// set response header
-	for key, values := range respRecorder.Result().Header {
-		for _, value := range values {
-			rw.Header().Set(key, value)
-		}
-	}
 	respRecorder.Result().Write(rw)
-
+	return
 }
 
 func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
