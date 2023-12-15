@@ -95,8 +95,17 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 			}
 		}
 	}
-
-	respRecorder.Result().Write(rw)
+	// copy response header value
+	for key, values := range respRecorder.Result().Header {
+		for _, value := range values {
+			if !strings.EqualFold(key, "content-length") {
+				rw.Header().Set(key, value)
+			}
+		}
+	}
+	// serve request
+	rw.WriteHeader(respRecorder.Result().StatusCode)
+	io.Copy(rw, respRecorder.Result().Body)
 	return
 }
 
