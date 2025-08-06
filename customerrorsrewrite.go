@@ -34,6 +34,12 @@ func CreateConfig() *Config {
 }
 
 func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	// Buffer the request body as it can only be read once
+	var bodyBytes []byte
+	if req.Body != nil {
+		bodyBytes, _ = io.ReadAll(req.Body)
+		req.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
+	}
 
 	// Process the request through the next handler.
 	respRecorder := httptest.NewRecorder()
@@ -46,10 +52,25 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 		// If the response code matches, redirect to TargetService.
 		log.Println("Original URL2:" + req.URL.Path)
 		if len(c.config.MatchPattern) > 0 {
+			// Check if the URL matches the pattern
+			regex := regexp.MustCompile(c.config.MatchPattern)
+			if !regex.MatchString(req.URL.Path) {
+				// If it doesn't match, serve the original response
+				for key, values := range respRecorder.Result().Header {
+					for _, value := range values {
+						if !strings.EqualFold(key, "content-length") {
+							rw.Header().Set(key, value)
+						}
+					}
+				}
+				rw.WriteHeader(respRecorder.Result().StatusCode)
+				io.Copy(rw, respRecorder.Result().Body)
+				return
+			}
 			// Rewrite path based on regex rule.
 			log.Println("MatchPattern:" + c.config.MatchPattern)
 			log.Println("ReplaceRule:" + c.config.ReplaceRule)
-			newPath := regexp.MustCompile(c.config.MatchPattern).ReplaceAllString(req.URL.Path, c.config.ReplaceRule)
+			newPath := regex.ReplaceAllString(req.URL.Path, c.config.ReplaceRule)
 			log.Println("New path:" + newPath)
 			req.URL.Path = newPath
 			newHost := strings.TrimPrefix(c.config.TargetService, "https://")
@@ -60,10 +81,12 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 			targetURL := c.config.TargetService + newPath // use newPath
 			log.Println("targetURL:" + targetURL)
 
-			// make new http.NewRequest
-			newReq, err := http.NewRequest(req.Method, targetURL, req.Body)
+			// make new http.NewRequest with buffered body
+			newReq, err := http.NewRequest(req.Method, targetURL, io.NopCloser(strings.NewReader(string(bodyBytes))))
 			if err != nil {
-				fmt.Printf("Error creating new request: %v\n", err)
+				log.Printf("Error creating new request: %v\n", err)
+				rw.WriteHeader(500)
+				rw.Write([]byte("Internal Server Error"))
 				return
 			}
 
@@ -93,7 +116,10 @@ func (c *CustomErrorsRewrite) ServeHTTP(rw http.ResponseWriter, req *http.Reques
 				io.Copy(rw, resp.Body)
 				return
 			} else {
-				fmt.Printf("Error fetching target service: %v\n", err)
+				log.Printf("Error fetching target service: %v\n", err)
+				rw.WriteHeader(500)
+				rw.Write([]byte("Internal Server Error"))
+				return
 			}
 		}
 	}
@@ -121,6 +147,18 @@ func New(_ context.Context, next http.Handler, config *Config, name string) (htt
 			return nil, fmt.Errorf("ReplaceRule is required")
 		}
 	}
+	// Validate regex pattern
+	if len(config.MatchPattern) > 0 {
+		_, err := regexp.Compile(config.MatchPattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MatchPattern regex: %v", err)
+		}
+	}
+
+	if config.ResponseCode == 0 {
+		return nil, fmt.Errorf("ResponseCode must be non-zero")
+	}
+
 	return &CustomErrorsRewrite{
 		name:   name,
 		config: config,
